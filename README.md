@@ -1,14 +1,17 @@
 # Petwave GIF Maker
 
-純前端揮手 GIF 產生器，可直接部署到 GitHub Pages。
+純前端、可直接部署到 GitHub Pages 的揮手 GIF 產生器。
 
-## 功能
+## 使用
 
-- 上傳圖片與自訂手掌素材
-- 拖曳圖片、手掌、文字調整位置
-- 用滑桿調整圖片與手掌尺寸、透明度
-- 用滑桿調整揮手速度與幅度
-- 調整文字大小、粗細、顏色與外框
-- 直接在瀏覽器合成 GIF
+1. 上傳圖片
+2. 在預覽區拖動圖片、手掌、文字
+3. 調整圖片尺寸、文字與播放速度
+4. 調整輸出尺寸與背景
+5. 匯出 GIF
 
-預設手掌素材：`assets/hand.gif`
+預設揮手素材：`assets/hand.gif`
+
+## 部署
+
+GitHub Pages 可直接使用 Repository root 的 `index.html`。

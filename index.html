@@ -13,7 +13,7 @@
       <div>
         <div class="eyebrow">PETWAVE / GIF MAKER</div>
         <h1>揮手 GIF 產生器</h1>
-        <p>上傳圖片 → 放上揮手手掌 → 拖動位置與尺寸 → 加文字 → 匯出 GIF</p>
+        <p>上傳圖片 → 放上揮手手掌 → 拖動位置 → 加文字 → 匯出 GIF</p>
       </div>
       <a class="ref-link" href="https://benisland.neocities.org/petpet/" target="_blank" rel="noreferrer">參考 Petpet ↗</a>
     </header>
@@ -30,7 +30,7 @@
           </label>
           <div class="field-grid">
             <label>圖片尺寸 <output id="imageSizeValue">100%</output>
-              <input id="imageSize" type="range" min="20" max="140" value="100">
+              <input id="imageSize" type="range" min="20" max="180" value="100">
             </label>
             <label>圖片透明度 <output id="imageOpacityValue">100%</output>
               <input id="imageOpacity" type="range" min="0" max="100" value="100">
@@ -42,31 +42,11 @@
         </section>
 
         <section class="control-section">
-          <h2>② 揮手素材</h2>
-          <label class="dropzone compact">
-            <input id="handInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
-            <strong>更換手掌素材</strong>
-            <small>預設使用 assets/hand.gif</small>
-          </label>
-          <div class="field-grid">
-            <label>手掌尺寸 <output id="handSizeValue">100%</output>
-              <input id="handSize" type="range" min="20" max="180" value="100">
-            </label>
-            <label>手掌透明度 <output id="handOpacityValue">100%</output>
-              <input id="handOpacity" type="range" min="0" max="100" value="100">
-            </label>
-          </div>
-          <div class="button-row">
-            <button class="ghost" id="resetHandBtn" type="button">重設手掌</button>
-          </div>
-        </section>
-
-        <section class="control-section">
-          <h2>③ 文字</h2>
+          <h2>② 文字</h2>
           <textarea id="textInput" rows="2" placeholder="輸入文字，例如：嗨！&#10;今天也要加油～">嗨！</textarea>
           <div class="field-grid">
             <label>字體大小 <output id="fontSizeValue">42</output>
-              <input id="fontSize" type="range" min="16" max="96" value="42">
+              <input id="fontSize" type="range" min="16" max="120" value="42">
             </label>
             <label>粗細 <output id="fontWeightValue">700</output>
               <input id="fontWeight" type="range" min="400" max="900" step="100" value="700">
@@ -84,27 +64,22 @@
         </section>
 
         <section class="control-section">
-          <h2>④ 動畫</h2>
+          <h2>③ 動畫</h2>
           <div class="field-grid">
-            <label>揮手速度 <output id="fpsValue">12 FPS</output>
-              <input id="fps" type="range" min="4" max="24" value="12">
+            <label>播放速度 <output id="speedValue">1×</output>
+              <input id="speed" type="range" min="25" max="300" value="100">
             </label>
-            <label>揮手幅度 <output id="waveValue">18°</output>
-              <input id="wave" type="range" min="4" max="34" value="18">
-            </label>
-          </div>
-          <div class="field-grid two">
             <label>輸出尺寸 <output id="outputSizeValue">400 × 400</output>
               <input id="outputSize" type="range" min="240" max="720" step="20" value="400">
             </label>
-            <label>背景
-              <select id="background">
-                <option value="transparent" selected>透明</option>
-                <option value="#ffffff">白色</option>
-                <option value="#000000">黑色</option>
-              </select>
-            </label>
           </div>
+          <label class="single-field">背景
+            <select id="background">
+              <option value="transparent" selected>透明</option>
+              <option value="#ffffff">白色</option>
+              <option value="#000000">黑色</option>
+            </select>
+          </label>
         </section>
 
         <section class="control-section tips">
