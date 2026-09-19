@@ -2,29 +2,29 @@ const $ = id => document.getElementById(id);
 const canvas = $('previewCanvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 const SCENE_SIZE = 400;
-const FRAME_TOTAL = 12;
-const BASE_FRAME_MS = 100;
+const EXPORT_FRAME_COUNT = 20;
+const EXPORT_FRAME_MS = 80;
+const TEXT_DEFAULT_X = SCENE_SIZE * 0.32;
+const TEXT_DEFAULT_Y = SCENE_SIZE * 0.16;
+const TEXT_FADE_PERIOD_MS = 2600;
 
 const state = {
   subject: { img: null, x: 200, y: 220, scale: 1, baseScale: 1, baseW: 0, baseH: 0, opacity: 1 },
   hand: { img: null, x: 286, y: 305, scale: 0.56 },
-  text: { x: 200, y: 48 },
-  textValue: '嗨！',
+  text: { x: TEXT_DEFAULT_X, y: TEXT_DEFAULT_Y },
+  textValue: 'hello',
   fontSize: 42,
   fontWeight: 700,
   textColor: '#ffffff',
   strokeColor: '#111111',
-  speed: 100,
   background: 'transparent',
   outputSize: 400,
   activeLayer: 'subject',
   playing: true,
-  currentFrame: 0,
   resultUrl: null
 };
 
 const layerLabel = { subject: '圖片', hand: '手掌', text: '文字' };
-let lastTick = 0;
 let pointer = null;
 let resultGeneration = 0;
 
@@ -49,8 +49,8 @@ function resetSceneForSubject() {
   $('imageOpacity').value = 100;
   state.hand.x = SCENE_SIZE * 0.72;
   state.hand.y = SCENE_SIZE * 0.76;
-  state.text.x = SCENE_SIZE / 2;
-  state.text.y = Math.max(42, SCENE_SIZE * 0.12);
+  state.text.x = TEXT_DEFAULT_X;
+  state.text.y = TEXT_DEFAULT_Y;
 }
 
 function loadImage(url) {
@@ -102,33 +102,25 @@ function drawSubject(c, scale = 1) {
   c.restore();
 }
 
-function waveTransform(frame) {
-  const t = frame / FRAME_TOTAL;
-  const angle = Math.sin(t * Math.PI * 2) * 16;
-  const dx = Math.sin(t * Math.PI * 2 * 1.3) * SCENE_SIZE * 0.015;
-  const dy = (Math.cos(t * Math.PI * 2) * 0.5 + 0.5) * SCENE_SIZE * 0.008;
-  const scale = 1 + Math.sin(t * Math.PI * 4) * 0.025;
-  return { angle, dx, dy, scale };
-}
-
-function drawHand(c, frame) {
-  if (!state.hand.img) return;
-  const transform = waveTransform(frame);
-  const img = state.hand.img;
-  const w = img.naturalWidth * state.hand.scale * transform.scale;
-  const h = img.naturalHeight * state.hand.scale * transform.scale;
+function drawHand(c) {
+  const hand = state.hand;
+  if (!hand.img) return;
+  const w = hand.img.naturalWidth * hand.scale;
+  const h = hand.img.naturalHeight * hand.scale;
   const pivotX = w * 0.43;
   const pivotY = h * 0.78;
-  c.save();
-  c.translate(state.hand.x + transform.dx, state.hand.y + transform.dy);
-  c.rotate(transform.angle * Math.PI / 180);
-  c.drawImage(img, -pivotX, -pivotY, w, h);
-  c.restore();
+  c.drawImage(hand.img, hand.x - pivotX, hand.y - pivotY, w, h);
+}
+
+function textFadeOpacity() {
+  const t = performance.now() % TEXT_FADE_PERIOD_MS;
+  return 0.15 + 0.85 * (0.5 - 0.5 * Math.cos((t / TEXT_FADE_PERIOD_MS) * Math.PI * 2));
 }
 
 function drawText(c) {
   if (!state.textValue) return;
   c.save();
+  c.globalAlpha = textFadeOpacity();
   c.textAlign = 'center';
   c.textBaseline = 'middle';
   c.font = `${state.fontWeight} ${state.fontSize}px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif`;
@@ -147,22 +139,16 @@ function drawText(c) {
   c.restore();
 }
 
-function render(frame = state.currentFrame) {
+function render() {
   clearCanvas(ctx);
   drawSubject(ctx);
-  drawHand(ctx, frame);
+  drawHand(ctx);
   drawText(ctx);
   updateLabels();
 }
 
-function speedMultiplier() {
-  return state.speed / 100;
-}
-
 function updateLabels() {
   $('activeLayerLabel').textContent = `目前：${layerLabel[state.activeLayer]}`;
-  $('frameCount').textContent = `${FRAME_TOTAL} frames`;
-  $('speedValue').textContent = `${Number(speedMultiplier().toFixed(2)).toString().replace(/\.00$/, '')}×`;
   $('fontSizeValue').textContent = `${state.fontSize}`;
   $('fontWeightValue').textContent = `${state.fontWeight}`;
   $('imageSizeValue').textContent = `${Math.round((state.subject.baseScale ? state.subject.scale / state.subject.baseScale : 1) * 100)}%`;
@@ -171,15 +157,8 @@ function updateLabels() {
   $('playToggle').textContent = state.playing ? '❚❚' : '▶';
 }
 
-function animate(now) {
-  const interval = BASE_FRAME_MS / speedMultiplier();
-  if (!lastTick) lastTick = now;
-  if (state.playing && now - lastTick >= interval) {
-    const steps = Math.max(1, Math.floor((now - lastTick) / interval));
-    state.currentFrame = (state.currentFrame + steps) % FRAME_TOTAL;
-    lastTick = now;
-    render();
-  }
+function animate() {
+  if (state.playing) render();
   requestAnimationFrame(animate);
 }
 
@@ -266,15 +245,7 @@ document.querySelectorAll('.layer').forEach(btn => {
 
 $('playToggle').addEventListener('click', () => {
   state.playing = !state.playing;
-  lastTick = performance.now();
   updateLabels();
-});
-
-$('speed').addEventListener('input', e => {
-  state.speed = Number(e.target.value);
-  lastTick = performance.now();
-  updateLabels();
-  render();
 });
 
 $('imageSize').addEventListener('input', e => {
@@ -373,8 +344,8 @@ $('resetImageBtn').addEventListener('click', () => {
 });
 
 $('resetTextBtn').addEventListener('click', () => {
-  state.text.x = SCENE_SIZE / 2;
-  state.text.y = Math.max(42, SCENE_SIZE * 0.12);
+  state.text.x = TEXT_DEFAULT_X;
+  state.text.y = TEXT_DEFAULT_Y;
   setActiveLayer('text');
   render();
 });
@@ -386,13 +357,13 @@ function makeExportCanvas(size) {
   return exportCanvas;
 }
 
-function drawSceneAtSize(c, frame, size) {
+function drawSceneAtSize(c, size) {
   const scale = size / SCENE_SIZE;
   clearCanvasOn(c, size);
   c.save();
   c.scale(scale, scale);
   drawSubject(c);
-  drawHand(c, frame);
+  drawHand(c);
   drawText(c);
   c.restore();
 }
@@ -405,8 +376,8 @@ function clearCanvasOn(c, size) {
   }
 }
 
-function renderFrameToImageData(exportCanvas, frame) {
-  drawSceneAtSize(exportCanvas, frame, state.outputSize);
+function renderFrameToImageData(exportCanvas) {
+  drawSceneAtSize(exportCanvas, state.outputSize);
   return exportCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, state.outputSize, state.outputSize);
 }
 
@@ -649,19 +620,18 @@ async function exportGif() {
   await new Promise(requestAnimationFrame);
   const frames = [];
   const exportCanvas = makeExportCanvas(state.outputSize);
-  const delay = BASE_FRAME_MS / speedMultiplier();
 
-  for (let i = 0; i < FRAME_TOTAL; i++) {
-    frames.push(renderFrameToImageData(exportCanvas, i));
-    $('progressBar').style.width = `${Math.round((i + 1) / FRAME_TOTAL * 25)}%`;
-    await new Promise(r => setTimeout(r, 0));
+  for (let i = 0; i < EXPORT_FRAME_COUNT; i++) {
+    frames.push(renderFrameToImageData(exportCanvas));
+    $('progressBar').style.width = `${Math.round((i + 1) / EXPORT_FRAME_COUNT * 25)}%`;
+    await new Promise(r => setTimeout(r, EXPORT_FRAME_MS));
   }
 
   const encoder = new GIFEncoder(state.outputSize, state.outputSize, {
     repeat: 0,
     transparent: state.background === 'transparent'
   });
-  frames.forEach(imageData => encoder.addFrame(imageData, delay));
+  frames.forEach(imageData => encoder.addFrame(imageData, EXPORT_FRAME_MS));
   const bytes = encoder.encode(progress => {
     $('progressBar').style.width = `${25 + Math.round(progress * 70)}%`;
     $('progressText').textContent = `編碼 GIF… ${Math.round(progress * 100)}%`;
