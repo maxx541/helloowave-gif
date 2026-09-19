@@ -43,7 +43,7 @@
 
         <section class="control-section">
           <h2>② 文字</h2>
-          <textarea id="textInput" rows="2" placeholder="輸入文字，例如：嗨！&#10;今天也要加油～">嗨！</textarea>
+          <textarea id="textInput" rows="2" placeholder="輸入文字，例如：hello&#10;今天也要加油～">hello</textarea>
           <div class="field-grid">
             <label>字體大小 <output id="fontSizeValue">42</output>
               <input id="fontSize" type="range" min="16" max="120" value="42">
@@ -66,9 +66,6 @@
         <section class="control-section">
           <h2>③ 動畫</h2>
           <div class="field-grid">
-            <label>播放速度 <output id="speedValue">1×</output>
-              <input id="speed" type="range" min="25" max="300" value="100">
-            </label>
             <label>輸出尺寸 <output id="outputSizeValue">400 × 400</output>
               <input id="outputSize" type="range" min="240" max="720" step="20" value="400">
             </label>
@@ -100,7 +97,6 @@
               <span class="status-dot"></span>
               <span id="statusText">預覽中</span>
             </div>
-            <div class="frame-count" id="frameCount">12 frames</div>
           </div>
           <div class="canvas-wrap" id="canvasWrap">
             <canvas id="previewCanvas" width="400" height="400" aria-label="GIF 預覽"></canvas>

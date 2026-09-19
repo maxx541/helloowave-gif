@@ -2,29 +2,29 @@ const $ = id => document.getElementById(id);
 const canvas = $('previewCanvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 const SCENE_SIZE = 400;
-const FRAME_TOTAL = 12;
-const BASE_FRAME_MS = 100;
+const EXPORT_FRAME_COUNT = 20;
+const EXPORT_FRAME_MS = 80;
+const TEXT_DEFAULT_X = SCENE_SIZE * 0.32;
+const TEXT_DEFAULT_Y = SCENE_SIZE * 0.16;
+const TEXT_FADE_PERIOD_MS = 2600;
 
 const state = {
   subject: { img: null, x: 200, y: 220, scale: 1, baseScale: 1, baseW: 0, baseH: 0, opacity: 1 },
   hand: { img: null, x: 286, y: 305, scale: 0.56 },
-  text: { x: 200, y: 48 },
-  textValue: '嗨！',
+  text: { x: TEXT_DEFAULT_X, y: TEXT_DEFAULT_Y },
+  textValue: 'hello',
   fontSize: 42,
   fontWeight: 700,
   textColor: '#ffffff',
   strokeColor: '#111111',
-  speed: 100,
   background: 'transparent',
   outputSize: 400,
   activeLayer: 'subject',
   playing: true,
-  currentFrame: 0,
   resultUrl: null
 };
 
 const layerLabel = { subject: '圖片', hand: '手掌', text: '文字' };
-let lastTick = 0;
 let pointer = null;
 let resultGeneration = 0;
 
@@ -49,8 +49,8 @@ function resetSceneForSubject() {
   $('imageOpacity').value = 100;
   state.hand.x = SCENE_SIZE * 0.72;
   state.hand.y = SCENE_SIZE * 0.76;
-  state.text.x = SCENE_SIZE / 2;
-  state.text.y = Math.max(42, SCENE_SIZE * 0.12);
+  state.text.x = TEXT_DEFAULT_X;
+  state.text.y = TEXT_DEFAULT_Y;
 }
 
 function loadImage(url) {
@@ -65,232 +65,10 @@ function loadImage(url) {
 async function loadDefaultHand() {
   try {
     state.hand.img = await loadImage('assets/hand.gif');
-    state.hand.frameW = state.hand.img.naturalWidth;
-    state.hand.frameH = state.hand.img.naturalHeight;
-    render();
-    const decoded = await decodeGifFrames('assets/hand.gif');
-    state.hand.frames = decoded.frames;
-    state.hand.frameW = decoded.width;
-    state.hand.frameH = decoded.height;
-    state.hand.totalDuration = decoded.frames.reduce((sum, f) => sum + (f.delay || 100), 0) || 100;
-    state.hand.frameIndex = 0;
-    state.hand.playhead = 0;
     render();
   } catch {
     $('statusText').textContent = '找不到 assets/hand.gif';
   }
-}
-
-// --- Minimal GIF decoder (so hand.gif playback speed can be driven manually) ---
-
-async function decodeGifFrames(url) {
-  const resp = await fetch(url);
-  const buf = new Uint8Array(await resp.arrayBuffer());
-  return parseGif(buf);
-}
-
-function parseGif(buf) {
-  let p = 0;
-  const readByte = () => buf[p++];
-  const readU16 = () => { const v = buf[p] | (buf[p + 1] << 8); p += 2; return v; };
-  const skipSubBlocks = () => {
-    let size;
-    while ((size = readByte()) !== 0) p += size;
-  };
-  const readSubBlocksBytes = () => {
-    const bytes = [];
-    let size;
-    while ((size = readByte()) !== 0) {
-      for (let i = 0; i < size; i++) bytes.push(readByte());
-    }
-    return bytes;
-  };
-
-  p = 6;
-  const width = readU16();
-  const height = readU16();
-  const packed = readByte();
-  const gctFlag = (packed & 0x80) !== 0;
-  const gctSize = 2 << (packed & 0x07);
-  readByte();
-  readByte();
-  let gct = null;
-  if (gctFlag) {
-    gct = [];
-    for (let i = 0; i < gctSize; i++) gct.push([readByte(), readByte(), readByte()]);
-  }
-
-  const frames = [];
-  let transparentIndex = -1;
-  let delay = 100;
-  let disposal = 0;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const cctx = canvas.getContext('2d');
-
-  while (p < buf.length) {
-    const block = readByte();
-    if (block === 0x21) {
-      const label = readByte();
-      if (label === 0xF9) {
-        readByte();
-        const packedGCE = readByte();
-        disposal = (packedGCE >> 2) & 0x07;
-        const transFlag = packedGCE & 0x01;
-        delay = readU16() * 10;
-        transparentIndex = transFlag ? readByte() : -1;
-        readByte();
-      } else {
-        skipSubBlocks();
-      }
-    } else if (block === 0x2C) {
-      const left = readU16();
-      const top = readU16();
-      const w = readU16();
-      const h = readU16();
-      const packedImg = readByte();
-      const lctFlag = (packedImg & 0x80) !== 0;
-      const interlace = (packedImg & 0x40) !== 0;
-      const lctSize = 2 << (packedImg & 0x07);
-      let lct = gct;
-      if (lctFlag) {
-        lct = [];
-        for (let i = 0; i < lctSize; i++) lct.push([readByte(), readByte(), readByte()]);
-      }
-      const minCodeSize = readByte();
-      const data = readSubBlocksBytes();
-      const indices = lzwDecode(data, minCodeSize, w * h);
-
-      let disposalCanvas = null;
-      if (disposal === 3) {
-        disposalCanvas = document.createElement('canvas');
-        disposalCanvas.width = width;
-        disposalCanvas.height = height;
-        disposalCanvas.getContext('2d').drawImage(canvas, 0, 0);
-      }
-
-      const frameImageData = cctx.getImageData(0, 0, width, height);
-      writeIndicesToImageData(frameImageData, indices, lct, left, top, w, h, interlace, transparentIndex);
-      cctx.putImageData(frameImageData, 0, 0);
-
-      const frameCanvas = document.createElement('canvas');
-      frameCanvas.width = width;
-      frameCanvas.height = height;
-      frameCanvas.getContext('2d').drawImage(canvas, 0, 0);
-      frames.push({ canvas: frameCanvas, delay: delay || 100 });
-
-      if (disposal === 2) {
-        cctx.clearRect(left, top, w, h);
-      } else if (disposal === 3 && disposalCanvas) {
-        cctx.clearRect(0, 0, width, height);
-        cctx.drawImage(disposalCanvas, 0, 0);
-      }
-      disposal = 0;
-      transparentIndex = -1;
-    } else if (block === 0x3B) {
-      break;
-    } else {
-      break;
-    }
-  }
-
-  return { width, height, frames };
-}
-
-function lzwDecode(data, minCodeSize, pixelCount) {
-  const clearCode = 1 << minCodeSize;
-  const eoiCode = clearCode + 1;
-  let codeSize = minCodeSize + 1;
-  let dict = [];
-  const resetDict = () => {
-    dict = [];
-    for (let i = 0; i < clearCode; i++) dict[i] = [i];
-    dict[clearCode] = [];
-    dict[eoiCode] = null;
-    codeSize = minCodeSize + 1;
-  };
-  resetDict();
-
-  const output = new Uint8Array(pixelCount);
-  let outPos = 0;
-  let bitBuffer = 0, bitCount = 0, bytePos = 0;
-  const readCode = () => {
-    while (bitCount < codeSize) {
-      bitBuffer |= (data[bytePos++] || 0) << bitCount;
-      bitCount += 8;
-    }
-    const code = bitBuffer & ((1 << codeSize) - 1);
-    bitBuffer >>= codeSize;
-    bitCount -= codeSize;
-    return code;
-  };
-
-  let prev = null;
-  while (outPos < pixelCount) {
-    const code = readCode();
-    if (code === clearCode) { resetDict(); prev = null; continue; }
-    if (code === eoiCode) break;
-    let entry;
-    if (dict[code]) entry = dict[code];
-    else if (code === dict.length && prev) entry = prev.concat(prev[0]);
-    else break;
-    for (let i = 0; i < entry.length && outPos < pixelCount; i++) output[outPos++] = entry[i];
-    if (prev) {
-      dict.push(prev.concat(entry[0]));
-      if (dict.length >= (1 << codeSize) && codeSize < 12) codeSize++;
-    }
-    prev = entry;
-  }
-  return output;
-}
-
-function writeIndicesToImageData(imageData, indices, palette, left, top, w, h, interlace, transparentIndex) {
-  const data = imageData.data;
-  const fullW = imageData.width;
-  let idx = 0;
-  const setPixel = (x, y) => {
-    const colorIndex = indices[idx++];
-    if (colorIndex === transparentIndex) return;
-    const c = (palette && palette[colorIndex]) || [0, 0, 0];
-    const di = ((top + y) * fullW + (left + x)) * 4;
-    data[di] = c[0];
-    data[di + 1] = c[1];
-    data[di + 2] = c[2];
-    data[di + 3] = 255;
-  };
-  if (!interlace) {
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) setPixel(x, y);
-  } else {
-    const rows = [];
-    for (let y = 0; y < h; y += 8) rows.push(y);
-    for (let y = 4; y < h; y += 8) rows.push(y);
-    for (let y = 2; y < h; y += 4) rows.push(y);
-    for (let y = 1; y < h; y += 2) rows.push(y);
-    for (const y of rows) for (let x = 0; x < w; x++) setPixel(x, y);
-  }
-}
-
-function handIndexAtTime(t) {
-  const hand = state.hand;
-  if (!hand.frames || !hand.frames.length) return 0;
-  const total = hand.totalDuration || 1;
-  let tt = t % total;
-  if (tt < 0) tt += total;
-  let acc = 0;
-  for (let i = 0; i < hand.frames.length; i++) {
-    acc += hand.frames[i].delay || 100;
-    if (tt < acc) return i;
-  }
-  return hand.frames.length - 1;
-}
-
-function advanceHandGif(dt) {
-  const hand = state.hand;
-  if (!hand.frames || !hand.frames.length) return;
-  hand.playhead = (hand.playhead || 0) + dt * speedMultiplier();
-  hand.frameIndex = handIndexAtTime(hand.playhead);
 }
 
 function clearCanvas(c) {
@@ -324,37 +102,25 @@ function drawSubject(c, scale = 1) {
   c.restore();
 }
 
-function waveTransform(frame) {
-  const t = frame / FRAME_TOTAL;
-  const angle = Math.sin(t * Math.PI * 2) * 16;
-  const dx = Math.sin(t * Math.PI * 2 * 1.3) * SCENE_SIZE * 0.015;
-  const dy = (Math.cos(t * Math.PI * 2) * 0.5 + 0.5) * SCENE_SIZE * 0.008;
-  const scale = 1 + Math.sin(t * Math.PI * 4) * 0.025;
-  return { angle, dx, dy, scale };
-}
-
-function drawHand(c, frame, handIndexOverride) {
+function drawHand(c) {
   const hand = state.hand;
-  const idx = handIndexOverride !== undefined ? handIndexOverride : (hand.frameIndex || 0);
-  const source = (hand.frames && hand.frames[idx]) ? hand.frames[idx].canvas : hand.img;
-  if (!source) return;
-  const transform = waveTransform(frame);
-  const baseW = hand.frameW || source.naturalWidth || source.width;
-  const baseH = hand.frameH || source.naturalHeight || source.height;
-  const w = baseW * hand.scale * transform.scale;
-  const h = baseH * hand.scale * transform.scale;
+  if (!hand.img) return;
+  const w = hand.img.naturalWidth * hand.scale;
+  const h = hand.img.naturalHeight * hand.scale;
   const pivotX = w * 0.43;
   const pivotY = h * 0.78;
-  c.save();
-  c.translate(hand.x + transform.dx, hand.y + transform.dy);
-  c.rotate(transform.angle * Math.PI / 180);
-  c.drawImage(source, -pivotX, -pivotY, w, h);
-  c.restore();
+  c.drawImage(hand.img, hand.x - pivotX, hand.y - pivotY, w, h);
+}
+
+function textFadeOpacity() {
+  const t = performance.now() % TEXT_FADE_PERIOD_MS;
+  return 0.15 + 0.85 * (0.5 - 0.5 * Math.cos((t / TEXT_FADE_PERIOD_MS) * Math.PI * 2));
 }
 
 function drawText(c) {
   if (!state.textValue) return;
   c.save();
+  c.globalAlpha = textFadeOpacity();
   c.textAlign = 'center';
   c.textBaseline = 'middle';
   c.font = `${state.fontWeight} ${state.fontSize}px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif`;
@@ -373,22 +139,16 @@ function drawText(c) {
   c.restore();
 }
 
-function render(frame = state.currentFrame) {
+function render() {
   clearCanvas(ctx);
   drawSubject(ctx);
-  drawHand(ctx, frame);
+  drawHand(ctx);
   drawText(ctx);
   updateLabels();
 }
 
-function speedMultiplier() {
-  return state.speed / 100;
-}
-
 function updateLabels() {
   $('activeLayerLabel').textContent = `目前：${layerLabel[state.activeLayer]}`;
-  $('frameCount').textContent = `${FRAME_TOTAL} frames`;
-  $('speedValue').textContent = `${Number(speedMultiplier().toFixed(2)).toString().replace(/\.00$/, '')}×`;
   $('fontSizeValue').textContent = `${state.fontSize}`;
   $('fontWeightValue').textContent = `${state.fontWeight}`;
   $('imageSizeValue').textContent = `${Math.round((state.subject.baseScale ? state.subject.scale / state.subject.baseScale : 1) * 100)}%`;
@@ -397,20 +157,8 @@ function updateLabels() {
   $('playToggle').textContent = state.playing ? '❚❚' : '▶';
 }
 
-function animate(now) {
-  if (!lastTick) lastTick = now;
-  const dt = Math.min(250, now - lastTick);
-  lastTick = now;
-  if (state.playing) {
-    const interval = BASE_FRAME_MS / speedMultiplier();
-    state.waveAcc = (state.waveAcc || 0) + dt;
-    while (state.waveAcc >= interval) {
-      state.currentFrame = (state.currentFrame + 1) % FRAME_TOTAL;
-      state.waveAcc -= interval;
-    }
-    advanceHandGif(dt);
-    render();
-  }
+function animate() {
+  if (state.playing) render();
   requestAnimationFrame(animate);
 }
 
@@ -440,9 +188,9 @@ function approxTextBox() {
 function hitTest(p) {
   const textBox = approxTextBox();
   if (textBox && p.x >= textBox.x && p.x <= textBox.x + textBox.w && p.y >= textBox.y && p.y <= textBox.y + textBox.h) return 'text';
-  if (state.hand.img || state.hand.frames) {
-    const w = (state.hand.frameW || state.hand.img.naturalWidth) * state.hand.scale;
-    const h = (state.hand.frameH || state.hand.img.naturalHeight) * state.hand.scale;
+  if (state.hand.img) {
+    const w = state.hand.img.naturalWidth * state.hand.scale;
+    const h = state.hand.img.naturalHeight * state.hand.scale;
     const box = { x: state.hand.x - w * 0.43, y: state.hand.y - h * 0.78, w, h };
     if (p.x >= box.x && p.x <= box.x + box.w && p.y >= box.y && p.y <= box.y + box.h) return 'hand';
   }
@@ -497,15 +245,7 @@ document.querySelectorAll('.layer').forEach(btn => {
 
 $('playToggle').addEventListener('click', () => {
   state.playing = !state.playing;
-  lastTick = performance.now();
   updateLabels();
-});
-
-$('speed').addEventListener('input', e => {
-  state.speed = Number(e.target.value);
-  lastTick = performance.now();
-  updateLabels();
-  render();
 });
 
 $('imageSize').addEventListener('input', e => {
@@ -604,8 +344,8 @@ $('resetImageBtn').addEventListener('click', () => {
 });
 
 $('resetTextBtn').addEventListener('click', () => {
-  state.text.x = SCENE_SIZE / 2;
-  state.text.y = Math.max(42, SCENE_SIZE * 0.12);
+  state.text.x = TEXT_DEFAULT_X;
+  state.text.y = TEXT_DEFAULT_Y;
   setActiveLayer('text');
   render();
 });
@@ -617,13 +357,13 @@ function makeExportCanvas(size) {
   return exportCanvas;
 }
 
-function drawSceneAtSize(c, frame, size, handIndex) {
+function drawSceneAtSize(c, size) {
   const scale = size / SCENE_SIZE;
   clearCanvasOn(c, size);
   c.save();
   c.scale(scale, scale);
   drawSubject(c);
-  drawHand(c, frame, handIndex);
+  drawHand(c);
   drawText(c);
   c.restore();
 }
@@ -636,8 +376,8 @@ function clearCanvasOn(c, size) {
   }
 }
 
-function renderFrameToImageData(exportCanvas, frame, handIndex) {
-  drawSceneAtSize(exportCanvas, frame, state.outputSize, handIndex);
+function renderFrameToImageData(exportCanvas) {
+  drawSceneAtSize(exportCanvas, state.outputSize);
   return exportCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, state.outputSize, state.outputSize);
 }
 
@@ -880,20 +620,18 @@ async function exportGif() {
   await new Promise(requestAnimationFrame);
   const frames = [];
   const exportCanvas = makeExportCanvas(state.outputSize);
-  const delay = BASE_FRAME_MS / speedMultiplier();
 
-  for (let i = 0; i < FRAME_TOTAL; i++) {
-    const handIndex = handIndexAtTime(i * BASE_FRAME_MS * speedMultiplier());
-    frames.push(renderFrameToImageData(exportCanvas, i, handIndex));
-    $('progressBar').style.width = `${Math.round((i + 1) / FRAME_TOTAL * 25)}%`;
-    await new Promise(r => setTimeout(r, 0));
+  for (let i = 0; i < EXPORT_FRAME_COUNT; i++) {
+    frames.push(renderFrameToImageData(exportCanvas));
+    $('progressBar').style.width = `${Math.round((i + 1) / EXPORT_FRAME_COUNT * 25)}%`;
+    await new Promise(r => setTimeout(r, EXPORT_FRAME_MS));
   }
 
   const encoder = new GIFEncoder(state.outputSize, state.outputSize, {
     repeat: 0,
     transparent: state.background === 'transparent'
   });
-  frames.forEach(imageData => encoder.addFrame(imageData, delay));
+  frames.forEach(imageData => encoder.addFrame(imageData, EXPORT_FRAME_MS));
   const bytes = encoder.encode(progress => {
     $('progressBar').style.width = `${25 + Math.round(progress * 70)}%`;
     $('progressText').textContent = `編碼 GIF… ${Math.round(progress * 100)}%`;
