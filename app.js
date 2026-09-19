@@ -1,13 +1,11 @@
-// Petwave GIF Maker — no external runtime dependency.
-// Includes a small browser-side GIF89a encoder so the GitHub Pages site can work without a CDN.
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('previewCanvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
 const state = {
-  subject: { img: null, x: 200, y: 220, scale: 1, baseW: 0, baseH: 0 },
-  hand: { img: null, x: 248, y: 86, scale: .56, angle: 0 },
+  subject: { img: null, x: 200, y: 220, scale: 1, baseScale: 1, baseW: 0, baseH: 0, opacity: 1 },
+  hand: { img: null, x: 248, y: 86, scale: .56, angle: 0, opacity: 1 },
   text: { x: 200, y: 48 },
   textValue: '嗨！',
   fontSize: 42,
@@ -45,7 +43,9 @@ function fitInitialPositions(force = false) {
   const maxH = state.size * 0.72;
   const s = Math.min(maxW / state.subject.img.naturalWidth, maxH / state.subject.img.naturalHeight, 1);
   if (force || !state.subject.baseW) {
+    state.subject.baseScale = s;
     state.subject.scale = s;
+    if ($('imageSize')) $('imageSize').value = 100;
     state.subject.baseW = state.subject.img.naturalWidth;
     state.subject.baseH = state.subject.img.naturalHeight;
     state.subject.x = state.size / 2;
@@ -55,6 +55,7 @@ function fitInitialPositions(force = false) {
     state.hand.x = state.size * .72;
     state.hand.y = state.size * .70;
     state.hand.scale = Math.max(.36, state.size / 770);
+    if ($('handSize')) $('handSize').value = 100;
     state.text.x = state.size / 2;
     state.text.y = Math.max(42, state.size * .12);
   }
@@ -74,7 +75,6 @@ async function loadDefaultHand() {
     state.hand.img = await loadImage('assets/hand.gif');
     render();
   } catch (e) {
-    // The page also supports direct hand upload. Keep a clear message if the asset is missing.
     $('statusText').textContent = '找不到 assets/hand.gif，請直接上傳手掌素材';
   }
 }
@@ -95,13 +95,15 @@ function getSubjectSize() {
 function drawSubject(c) {
   if (!state.subject.img) return;
   const { w, h } = getSubjectSize();
+  c.save();
+  c.globalAlpha = state.subject.opacity;
   c.drawImage(state.subject.img, state.subject.x - w / 2, state.subject.y - h / 2, w, h);
+  c.restore();
 }
 
 function waveTransform(frame) {
   const n = frameTotal();
   const t = n <= 1 ? 0 : frame / (n - 1);
-  // Smooth back-and-forth motion. A second harmonic keeps the gesture lively.
   const radians = (t * Math.PI * 2) - Math.PI / 2;
   const angle = Math.sin(radians) * state.wave;
   const dx = Math.sin(radians * 1.3) * state.size * 0.015;
@@ -119,6 +121,7 @@ function drawHand(c, frame) {
   const pivotX = w * 0.43;
   const pivotY = h * 0.78;
   c.save();
+  c.globalAlpha = state.hand.opacity;
   c.translate(state.hand.x + transform.dx, state.hand.y + transform.dy);
   c.rotate(transform.angle * Math.PI / 180);
   c.drawImage(img, -pivotX, -pivotY, w, h);
@@ -188,6 +191,11 @@ function updateLabels() {
   $('waveValue').textContent = `${state.wave}°`;
   $('fontSizeValue').textContent = `${state.fontSize}`;
   $('fontWeightValue').textContent = `${state.fontWeight}`;
+  $('imageSizeValue').textContent = `${Math.round(state.subject.scale / state.subject.baseScale * 100)}%`;
+  $('imageOpacityValue').textContent = `${Math.round(state.subject.opacity * 100)}%`;
+  $('handSizeValue').textContent = `${Math.round(state.hand.scale / Math.max(.36, state.size / 770) * 100)}%`;
+  $('handOpacityValue').textContent = `${Math.round(state.hand.opacity * 100)}%`;
+  $('outputSizeValue').textContent = `${state.size} × ${state.size}`;
   $('playToggle').textContent = state.playing ? '❚❚' : '▶';
 }
 
@@ -219,7 +227,6 @@ function approxTextBox() {
 }
 
 function hitTest(p) {
-  // Topmost first: text → hand → image.
   if (state.textValue) {
     const b = approxTextBox();
     if (p.x >= b.x && p.x <= b.x+b.w && p.y >= b.y && p.y <= b.y+b.h) return 'text';
@@ -278,6 +285,20 @@ function setLayerPos(layer,x,y) {
 document.querySelectorAll('.layer').forEach(btn => btn.addEventListener('click', () => setActiveLayer(btn.dataset.layer)));
 $('playToggle').addEventListener('click', () => { state.playing=!state.playing; updateLabels(); });
 
+function bindPercentRange(id, key, valueId, target) {
+  $(id).addEventListener('input', e => {
+    const value = Number(e.target.value) / 100;
+    state[target][key] = target === 'subject' && key === 'scale' ? state.subject.baseScale * value : target === 'hand' && key === 'scale' ? Math.max(.36, state.size / 770) * value : value;
+    updateLabels();
+    render();
+  });
+}
+
+bindPercentRange('imageSize', 'scale', 'imageSizeValue', 'subject');
+bindPercentRange('imageOpacity', 'opacity', 'imageOpacityValue', 'subject');
+bindPercentRange('handSize', 'scale', 'handSizeValue', 'hand');
+bindPercentRange('handOpacity', 'opacity', 'handOpacityValue', 'hand');
+
 function bindRange(id, key, valueId) {
   $(id).addEventListener('input', e => { state[key] = Number(e.target.value); updateLabels(); render(); });
 }
@@ -289,7 +310,7 @@ $('textInput').addEventListener('input', e => { state.textValue=e.target.value; 
 $('textColor').addEventListener('input', e => { state.textColor=e.target.value; render(); });
 $('strokeColor').addEventListener('input', e => { state.strokeColor=e.target.value; render(); });
 $('background').addEventListener('change', e => { state.background=e.target.value; render(); });
-$('outputSize').addEventListener('change', e => { state.size=Number(e.target.value); setCanvasSize(state.size); render(); });
+$('outputSize').addEventListener('input', e => { state.size=Number(e.target.value); setCanvasSize(state.size); render(); });
 
 function wireDropzone(zone, input, handler) {
   ;['dragenter','dragover'].forEach(type => zone.addEventListener(type, e => {e.preventDefault(); zone.classList.add('dragover');}));
@@ -320,11 +341,10 @@ async function handleHandFile(file) {
 wireDropzone($('imageDropzone'), $('imageInput'), handleSubjectFile);
 wireDropzone(document.querySelector('.dropzone.compact'), $('handInput'), handleHandFile);
 
-$('resetImageBtn').addEventListener('click', () => { if(state.subject.img) { fitInitialPositions(true); setActiveLayer('subject'); render(); } });
-$('resetHandBtn').addEventListener('click', () => { state.hand.x=state.size*.72; state.hand.y=state.size*.70; state.hand.scale=Math.max(.36,state.size/770); setActiveLayer('hand'); render(); });
+$('resetImageBtn').addEventListener('click', () => { if(state.subject.img) { fitInitialPositions(true); state.subject.opacity=1; $('imageSize').value=100; $('imageOpacity').value=100; setActiveLayer('subject'); render(); } });
+$('resetHandBtn').addEventListener('click', () => { state.hand.x=state.size*.72; state.hand.y=state.size*.70; state.hand.scale=Math.max(.36,state.size/770); state.hand.opacity=1; $('handSize').value=100; $('handOpacity').value=100; setActiveLayer('hand'); render(); });
 $('resetTextBtn').addEventListener('click', () => { state.text.x=state.size/2; state.text.y=Math.max(42,state.size*.12); setActiveLayer('text'); render(); });
 
-// ---------- Minimal GIF89a encoder ----------
 class GIFEncoder {
   constructor(width, height, options={}) {
     this.width=width; this.height=height;
@@ -343,7 +363,6 @@ class GIFEncoder {
     out.push(0x80 | 0x70 | gctSizeBits);
     out.push(0); out.push(0);
     for (let i=0;i<256;i++) { const c=palette.colors[i]||[0,0,0]; out.push(c[0],c[1],c[2]); }
-    // Netscape looping extension.
     out.push(0x21,0xFF,0x0B); pushASCII(out,'NETSCAPE2.0');
     out.push(0x03,0x01); pushU16(out,this.repeat); out.push(0x00);
 
@@ -442,9 +461,6 @@ function mapPixels(p,palette,transparent){
 }
 function lzwEncode(data,minCodeSize){
   const clear=1<<minCodeSize,end=clear+1;
-  // Keep the dictionary at 9-bit codes and clear it before it would need a
-  // 10th bit. This is intentionally conservative: files are a little larger,
-  // but the encoder stays compact, deterministic, and easy to run everywhere.
   const codeSize=minCodeSize+1;
   let next=end+1;
   const dict=new Map();
@@ -528,5 +544,4 @@ updateLabels();
 render();
 raf=requestAnimationFrame(animate);
 
-// Optional debug hooks; harmless in production and useful when testing the static page.
 window.petwave = { state, render, exportGif, loadImage, handleSubjectFile, handleHandFile };
